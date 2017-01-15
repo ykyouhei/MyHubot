@@ -22,43 +22,44 @@
 # Author:
 #   jingweno
 
+async = require "async"
+
 module.exports = (robot) ->
 
   github  = require("githubot")(robot)
   preview = github.withOptions(apiVersion: 'squirrel-girl-preview')
 
-  generatePullAttachment = (pull) ->
-    new Promise (resolve) ->
-      preview.get "#{pull.issue_url}/reactions", (reactions) ->
-        thumbsupReactions = (reactions.filter (r) -> r.content == "+1")
-        thumbsup = thumbsupReactions.reduce (t, s) ->
-          ":+1:#{t}[#{s.user.login}]"
-        , ""
+  generatePullAttachment = (pull, callback) ->
+    preview.get "#{pull.issue_url}/reactions", (reactions) ->
+      thumbsupReactions = (reactions.filter (r) -> r.content == "+1")
+      thumbsup = thumbsupReactions.reduce (t, s) ->
+        ":+1:#{t}[#{s.user.login}]"
+      , ""
 
-        color = ""
-        switch thumbsupReactions.length
-          when 0
-            color = "e0ffff"
-          when 1
-            color = "87ceeb"
-          when 2
-            color = "00bfff"
-          else
-            color = "1e90ff"
+      color = ""
+      switch thumbsupReactions.length
+        when 0
+          color = "e0ffff"
+        when 1
+          color = "87ceeb"
+        when 2
+          color = "00bfff"
+        else
+          color = "1e90ff"
 
-        attachment =
-          color: color
-          fallback: pull.title
-          title: pull.title
-          title_link: pull.html_url
-          author_name: pull.user.login
-          author_link: pull.user.html_url
-          author_icon: pull.user.avatar_url
-          text: pull.body
-          fields: [value: thumbsup]
-          mrkdwn_in: ["text","fields"]
+      attachment =
+        color: color
+        fallback: pull.title
+        title: pull.title
+        title_link: pull.html_url
+        author_name: pull.user.login
+        author_link: pull.user.html_url
+        author_icon: pull.user.avatar_url
+        text: pull.body
+        fields: [value: thumbsup]
+        mrkdwn_in: ["text","fields"]
 
-        resolve attachment
+      callback null, attachment
 
   unless (url_api_base = process.env.HUBOT_GITHUB_API)?
     url_api_base = "https://api.github.com"
@@ -88,9 +89,7 @@ module.exports = (robot) ->
         else
           message = "[#{repo}]Open中のPull Requestが#{filtered_result.length}件あります"
 
-        tasks = (generatePullAttachment(pull) for pull in pulls)
-
-        Promise.all(tasks).then (attachments) ->
+        async.map pulls, generatePullAttachment, (error, attachments) ->
           msg.send attachments: attachments
           msg.send message
 
