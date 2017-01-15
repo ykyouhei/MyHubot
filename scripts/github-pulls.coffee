@@ -54,11 +54,15 @@ module.exports = (robot) ->
         for pull in filtered_result
           message = message + "\n\t#{pull.title} - #{pull.user.login}: #{pull.html_url}"
 
-      robot.emit 'slack.attachment',
-        message: msg.message
-        content: [{
-          text: "Attachment text"
-        }]
+        data =
+          content:
+            color: "00ff00"
+            fallback: "Sumally"
+            title: "Title"
+            title_link: "http://www.yahoo.co.jp"
+            text: "Body"
+
+        robot.emit 'slack.attachment', data
 
   robot.respond /show\s+(me\s+)?org\-pulls(\s+for\s+)?(.*)?/i, (msg) ->
 
