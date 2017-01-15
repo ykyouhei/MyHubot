@@ -61,6 +61,9 @@ module.exports = (robot) ->
             title: "Title"
             title_link: "http://www.yahoo.co.jp"
             text: "Body"
+          channel: msg.envelope.room
+
+        console.log data
 
         robot.emit 'slack.attachment', data
 
