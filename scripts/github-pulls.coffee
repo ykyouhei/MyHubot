@@ -8,12 +8,10 @@
 #   HUBOT_GITHUB_TOKEN
 #   HUBOT_GITHUB_USER
 #   HUBOT_GITHUB_API
-#   HUBOT_GITHUB_ORG
 #
 # Commands:
 #   hubot show [me] <user/repo> pulls [with <regular expression>] -- Shows open pull requests for that project by filtering pull request's title.
 #   hubot show [me] <repo> pulls -- Show open pulls for HUBOT_GITHUB_USER/<repo>, if HUBOT_GITHUB_USER is configured
-#   hubot show [me] org-pulls [for <organization>] -- Show open pulls for all repositories of an organization, default is HUBOT_GITHUB_ORG
 #
 # Notes:
 #   HUBOT_GITHUB_API allows you to set a custom URL path (for Github enterprise users)
@@ -26,7 +24,41 @@
 
 module.exports = (robot) ->
 
-  github = require("githubot")(robot)
+  github  = require("githubot")(robot)
+  preview = github.withOptions(apiVersion: 'squirrel-girl-preview')
+
+  generatePullAttachment = (pull) ->
+    new Promise (resolve) ->
+      preview.get "#{pull.issue_url}/reactions", (reactions) ->
+        thumbsupReactions = (reactions.filter (r) -> r.content == "+1")
+        thumbsup = thumbsupReactions.reduce (t, s) ->
+          ":+1:#{t}[#{s.user.login}]"
+        , ""
+
+        color = ""
+        switch thumbsupReactions.length
+          when 0
+            color = "e0ffff"
+          when 1
+            color = "87ceeb"
+          when 2
+            color = "00bfff"
+          else
+            color = "1e90ff"
+
+        attachment =
+          color: color
+          fallback: pull.title
+          title: pull.title
+          title_link: pull.html_url
+          author_name: pull.user.login
+          author_link: pull.user.html_url
+          author_icon: pull.user.avatar_url
+          text: pull.body
+          fields: [value: thumbsup]
+          mrkdwn_in: ["text","fields"]
+
+        resolve attachment
 
   unless (url_api_base = process.env.HUBOT_GITHUB_API)?
     url_api_base = "https://api.github.com"
@@ -38,60 +70,27 @@ module.exports = (robot) ->
     github.get "#{url_api_base}/repos/#{repo}/pulls", (pulls) ->
       if pulls.length == 0
         message = "Open中のPull Requestはありませんでした"
+        msg.send message
+        return
+
       else
         filtered_result = []
         for pull in pulls
-          console.log pull
           if filter_reg_exp && pull.title.search(filter_reg_exp) < 0
             continue
           filtered_result.push(pull)
 
         if filtered_result.length == 0
           message = "フィルタにマッチするOpen中のPull Requestはありませんでした"
+          msg.send message
+          return
+
         else
           message = "[#{repo}]Open中のPull Requestが#{filtered_result.length}件あります"
 
-        for pull in filtered_result
-          message = message + "\n\t#{pull.title} - #{pull.user.login}: #{pull.html_url}"
+        tasks = (generatePullAttachment(pull) for pull in pulls)
 
-        data =
-          content:
-            color: "00ff00"
-            fallback: "Sumally"
-            title: "Title"
-            title_link: "http://www.yahoo.co.jp"
-            text: "Body"
-          channel: msg.envelope.room
+        Promise.all(tasks).then (attachments) ->
+          msg.send attachments: attachments
+          msg.send message
 
-        console.log data
-
-        robot.emit 'slack.attachment', data
-
-  robot.respond /show\s+(me\s+)?org\-pulls(\s+for\s+)?(.*)?/i, (msg) ->
-
-    org_name = msg.match[3] || process.env.HUBOT_GITHUB_ORG
-
-    unless (org_name)
-      msg.send "No organization specified, please provide one or set HUBOT_GITHUB_ORG accordingly."
-      return
-
-    url = "#{url_api_base}/orgs/#{org_name}/issues?filter=all&state=open&per_page=100"
-    github.get url, (issues) ->
-      if issues.length == 0
-        message = "Achievement unlocked: open pull requests zero!"
-      else
-        filtered_result = []
-        for issue in issues
-          filtered_result.push issue if issue.pull_request?
-
-        if filtered_result.length == 0
-          message = "Achievement unlocked: open pull requests zero!"
-        else if filtered_result.length == 1
-          message = "There's only one open pull request for #{org_name}:"
-        else
-          message = "I found #{filtered_result.length} open pull requests for #{org_name}:"
-
-        for issue in filtered_result
-          message = message + "\n\t#{issue.repository.name}: #{issue.title} (#{issue.user.login}) -> #{issue.pull_request.html_url}"
-
-      msg.send message
